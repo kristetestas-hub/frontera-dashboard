@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontera – svetainės užklausų stebėjimas</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#071a2f;color:#fff}
+.wrap{max-width:1180px;margin:auto;padding:28px 20px}
+header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
+h1{margin:0 0 8px}.sub,.muted{color:#aac2dd}
+button{background:#0d2a4a;color:#fff;border:1px solid #2b5d8c;border-radius:10px;padding:12px 18px;font-weight:700;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:24px 0}
+.card{background:#0d2a4a;border:1px solid #2b5d8c;border-radius:14px;padding:20px}
+.label{color:#aac2dd;font-size:13px;text-transform:uppercase}.value{font-size:34px;font-weight:800;margin:12px 0 6px}
+section{margin-top:28px}.areas{display:flex;flex-wrap:wrap;gap:10px}
+.area{background:#102f53;border:1px solid #2b5d8c;border-radius:999px;padding:9px 13px}
+.table-wrap{overflow:auto;border:1px solid #2b5d8c;border-radius:14px;background:#0d2a4a}
+table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:13px 14px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+th{font-size:12px;text-transform:uppercase;color:#d8e8f8;background:#0c2745}
+.badge{display:inline-block;padding:5px 9px;border-radius:999px;font-size:12px;font-weight:800}
+.ok{background:rgba(39,194,108,.16);color:#77e7a7}.err{background:rgba(255,91,91,.16);color:#ff9a9a}.neutral{background:rgba(255,255,255,.08);color:#dbe9f7}
+.notice{display:none;padding:12px 14px;border-radius:10px;margin:14px 0;background:#3a1717;border:1px solid #7c2e2e;color:#ffdede}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){header{flex-direction:column}.grid{grid-template-columns:1fr}button{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><div><h1>Frontera – svetainės užklausų stebėjimas</h1><div class="sub">Automatizacijos vykdymų dashboardas</div></div><button id="refresh">Atnaujinti duomenis</button></header>
+<p class="muted" id="updated">Paskutinis atnaujinimas: –</p>
+<div id="notice" class="notice"></div>
+<div class="grid">
+<div class="card"><div class="label">Viso užklausų</div><div class="value" id="total">–</div><div class="muted">Iš Google Sheets</div></div>
+<div class="card"><div class="label">Sėkmingi vykdymai</div><div class="value" id="success">–</div><div class="muted">SUCCESS</div></div>
+<div class="card"><div class="label">Klaidos</div><div class="value" id="errors">–</div><div class="muted">ERROR</div></div>
+<div class="card"><div class="label">Paskutinė užklausa</div><div class="value" id="last" style="font-size:20px">–</div><div class="muted" id="lastDate">–</div></div>
+</div>
+<section><h2>Užklausos pagal sritį</h2><div class="areas" id="areas"></div></section>
+<section><h2>Naujausios užklausos</h2><div class="table-wrap"><table><thead><tr><th>Data</th><th>Klausimo sritis</th><th>Vardas</th><th>Įmonė</th><th>Statusas</th></tr></thead><tbody id="requests"></tbody></table></div></section>
+<section><h2>Automatizacijos vykdymų žurnalas</h2><div class="table-wrap"><table><thead><tr><th>Data</th><th>Workflow</th><th>Būsena</th><th>Rezultatas</th><th>Klaida</th></tr></thead><tbody id="runs"></tbody></table></div></section>
+</div>
+<script>
+const API_URL='https://kriste.app.n8n.cloud/webhook/frontera-dashboard';
+const el=id=>document.getElementById(id);
+const safe=v=>(v===null||v===undefined||v==='')?'–':String(v);
+const fmt=v=>{if(!v)return '–';const d=new Date(v);return isNaN(d)?String(v):d.toLocaleString('lt-LT');};
+const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;");
+function normalize(raw){const p=Array.isArray(raw)?(raw[0]||{}):(raw||{});return{uzklausos:Array.isArray(p.uzklausos)?p.uzklausos:[],vykdymai:Array.isArray(p.vykdymai)?p.vykdymai:[]};}
+function newest(arr){return [...arr].sort((a,b)=>new Date(b.data_laikas||0)-new Date(a.data_laikas||0));}
+function render(data){
+ const u=newest(data.uzklausos),v=newest(data.vykdymai);
+ el('total').textContent=u.length;el('success').textContent=v.filter(x=>String(x.busena).toUpperCase()==='SUCCESS').length;el('errors').textContent=v.filter(x=>String(x.busena).toUpperCase()==='ERROR').length;
+ el('last').textContent=u.length?safe(u[0].klausimo_sritis):'–';el('lastDate').textContent=u.length?fmt(u[0].data_laikas):'–';
+ const counts={};u.forEach(x=>{const k=safe(x.klausimo_sritis);counts[k]=(counts[k]||0)+1;});
+ el('areas').innerHTML=Object.keys(counts).length?Object.entries(counts).map(([k,n])=>`<span class="area">${esc(k)}: <strong>${n}</strong></span>`).join(''):'<span class="muted">Duomenų nėra</span>';
+ el('requests').innerHTML=u.length?u.map(x=>`<tr><td>${esc(fmt(x.data_laikas))}</td><td>${esc(safe(x.klausimo_sritis))}</td><td>${esc(safe(x.vardas_pavarde))}</td><td>${esc(safe(x.imones_pavadinimas))}</td><td><span class="badge neutral">${esc(safe(x.statusas))}</span></td></tr>`).join(''):'<tr><td colspan="5">Užklausų nėra</td></tr>';
+ el('runs').innerHTML=v.length?v.map(x=>{const s=String(x.busena||'').toUpperCase(),c=s==='SUCCESS'?'ok':s==='ERROR'?'err':'neutral';return `<tr><td>${esc(fmt(x.data_laikas))}</td><td>${esc(safe(x.workflow))}</td><td><span class="badge ${c}">${esc(safe(x.busena))}</span></td><td>${esc(safe(x.rezultatas))}</td><td>${esc(safe(x.klaida))}</td></tr>`;}).join(''):'<tr><td colspan="5">Vykdymų nėra</td></tr>';
+}
+async function load(){
+ const btn=el('refresh'),note=el('notice');btn.disabled=true;btn.textContent='Kraunama...';note.style.display='none';
+ try{const r=await fetch(API_URL,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const raw=await r.json();render(normalize(raw));el('updated').textContent='Paskutinis atnaujinimas: '+new Date().toLocaleString('lt-LT');}
+ catch(e){note.textContent='Nepavyko gauti duomenų iš n8n: '+e.message;note.style.display='block';render({uzklausos:[],vykdymai:[]});}
+ finally{btn.disabled=false;btn.textContent='Atnaujinti duomenis';}
+}
+el('refresh').addEventListener('click',load);load();
+</script>
+</body>
+</html>
